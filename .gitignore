@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+out/
+# 14MB binary, re-downloadable; keep it on disk, out of history
+assets/*.sf2
