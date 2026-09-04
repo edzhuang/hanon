@@ -103,14 +103,18 @@ Never rent a GPU to tune reward weights.
 
 ## Budget
 
-Hard cap **$150**, prepaid into the Prime wallet in two tranches. Everything this
+Hard cap **$75**, prepaid into the Prime wallet in two tranches. Everything this
 project spends (pods, qwen3-8b sampling, the Haiku judge via Prime Inference) draws
 from that one wallet, so `prime wallet` is the single source of truth for spend.
 
 | Tranche | Covers | Amount |
 | --- | --- | --- |
-| Now | Steps 1–5: sampling, judge passes, calibration, headroom probe, GEPA. API only. | $25 |
-| After the headroom probe passes | Step 6: ~60 GH200-hours, enough for 4–6 GRPO runs including the ones that break. | $125 |
+| Deposited 2026-09-04 | Steps 1–5: sampling, judge passes, calibration, headroom probe, GEPA. API only. | $25 |
+| After the headroom probe passes | Step 6: ~25 GH200-hours. One careful GRPO run plus a retry, not a comfortable four. | $50 |
+
+The GRPO tranche is deliberately lean, so the offline preparation is not optional:
+reward tuned on cached rollouts, argmax probe run, config smoke-tested on a tiny model
+locally, before the first GPU hour.
 
 Rules:
 
