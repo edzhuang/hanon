@@ -1,8 +1,18 @@
 # hanon
 
 RL a small LLM to compose piano music by writing `pretty_midi` code. Following
-surya.website/rling-qwen-to-paint-with-code: **prompt → model writes code → sandbox
-renders → judge scores → GRPO.** See `PLAN.md` for the current state and next steps.
+surya.website/rling-qwen-to-paint-with-code, which RL'd Qwen to paint via p5.brush
+sketches. Same loop: **prompt → model writes code → sandbox renders artifact → judge
+scores → GRPO.**
+
+| Paint-with-code | hanon |
+| --- | --- |
+| p5.brush JS sketch | Python using `pretty_midi` |
+| Puppeteer → PNG | exec in sandbox → `.mid` (→ wav via fluidsynth) |
+| HPSv3 aesthetic score | local anti-degeneracy metrics |
+| pairwise judge vs. rated reference paintings | pairwise judge vs. rated reference pieces |
+| GEPA on the system prompt | same |
+| GRPO on a 35B model | GRPO on Qwen3-8B + LoRA, prime-rl |
 
 ## Decisions already made, and why
 
@@ -12,7 +22,8 @@ reversed an earlier wrong call.
 **`pretty_midi`, not a custom DSL.** The blog's allowlist-of-eight-methods finding was
 about p5.brush being *niche*: the model had no pretraining knowledge, had to be told,
 and hallucinated. `pretty_midi` is already in pretraining, so it needs no docs in the
-system prompt — same endpoint, reached for free. The retired DSL is in `attic/dsl/`.
+system prompt — same endpoint, reached for free. The retired DSL is in git history
+(`git show 7431b49:attic/dsl/__init__.py`).
 
 **Qwen3-8B, not 4B.** RL sharpens what a model can already sometimes do; it does not
 install knowledge. Composition is knowledge-bound and 4B is where that falls off. 4B and
@@ -20,16 +31,27 @@ install knowledge. Composition is knowledge-bound and 4B is where that falls off
 
 **The judge reads the score, not audio.** One fixed soundfont means timbre is constant
 and all variance is in the notes, so `render.py`'s bar-by-bar text is near-lossless.
-~220 tokens for 30s, ~$0.002 per comparison. Audio judging is for spot-checks only.
+~220 tokens for 30s, so a comparison is ~1.8k — about $0.002 on Haiku, ~$8 per training
+run. Audio judging is for spot-checks only, never the inner loop.
 
-**Four reward components, not nine.** Their nine-component rubric plateaued because four
-quality judges correlated 0.85–0.95 — one component wearing four hats. Start where they
-finished: `0.05 compile + 0.05 length + 0.30 degeneracy + 0.60 pairwise judge`.
-Everything in `metrics.py` is logged and rewards nothing.
+**Four reward components, not nine.** Their nine-component rubric plateaued at 0.65 with
+repetitive output because four quality judges correlated 0.85–0.95 — one component
+wearing four hats — while length saturated immediately. Start where they finished:
 
-**The reference pool is graded on purpose.** MAESTRO and GiantMIDI are world-class,
-which is a trap: if every reference is Chopin the candidate loses every comparison, the
-reward is constant, and a constant has no gradient. Mix `love` (target) with `ok`
+```
+0.05  compiles                (binary gate)
+0.05  length in range         (binary gate)
+0.30  not degenerate          (local, free, absolute)
+0.60  pairwise vs references  (the only component that scales with taste)
+```
+
+Everything in `metrics.py` is logged and rewards nothing. Observability is free; reward
+components are not.
+
+**The reference pool is graded on purpose.** They *couldn't* source human p5.brush
+paintings. Piano is the opposite — MAESTRO and GiantMIDI are world-class and enormous —
+and that is a trap: if every reference is Chopin the candidate loses every comparison,
+the reward is constant, and a constant has no gradient. Mix `love` (target) with `ok`
 (beatable), 70/30.
 
 **GH200 96GB @ $1.99/hr, not H100 @ $4.29.** More memory than an H100 for under half the
@@ -41,7 +63,8 @@ Check `prime availability list` before assuming; prices move and I quoted them w
 **Search the reward's argmax offline before spending anything on GPU.** RL converges
 there, so look at it first. On the counterpoint grader this caught two exploits that
 would have appeared in training as a clean 1.0 reward curve next to bad music — the
-worst kind of bug, because the curve looks like success. See `attic/argmax_probe.py`.
+worst kind of bug, because the curve looks like success. The probe that found them is
+`git show 7431b49:attic/argmax_probe.py`.
 
 **Validate a grader against a known-good example.** The counterpoint grader was tested
 against Fux's own dorian solution; when it flagged him, the rule was wrong, not Fux.
@@ -49,6 +72,34 @@ Find the equivalent positive control for any new reward component.
 
 **Iterate on reward offline against cached rollouts.** Generate once, re-score for free.
 Never rent a GPU to tune reward weights.
+
+## Status
+
+| Piece | File | State |
+| --- | --- | --- |
+| System prompt + briefs | `hanon/prompt.py` | done |
+| Sketch executor | `hanon/executor.py` | done |
+| Anti-degeneracy metrics | `hanon/rewards/metrics.py` | done, **thresholds still guesses** |
+| Bar-by-bar renderer | `hanon/render.py` | done |
+| Pairwise judge | `hanon/rewards/judge.py` | done, discriminates correctly live |
+| Reference pool | `hanon/refs.py` | schema done, **pool empty** |
+| End-to-end reward | `hanon/task.py` | done |
+| Sampling harness | `scripts/play.py` | done |
+| verifiers v1 taskset | — | next |
+| GEPA prompt optimisation | — | after baseline |
+| GRPO run | — | after headroom probe |
+
+## Next, in order
+
+1. **Sample a few hundred pieces** with `scripts/play.py` on qwen3-8b ($0.117/$0.455 per
+   1M via Prime Inference — a few dollars).
+2. **Rate ~200 of them** into `love` / `ok` / `meh`. About an hour of listening. This is
+   the real bottleneck and nothing downstream works without it.
+3. **Calibrate the metric thresholds** against the rated pool instead of my guesses.
+4. **Headroom probe**: is best-of-8 meaningfully better than mean-of-8? That gap is what
+   RL climbs. No gap means no amount of GPU time helps.
+5. **GEPA** on the system prompt — where the blog got its cheapest wins.
+6. **GRPO**, Qwen3-8B + LoRA, 1×H100 (~$1.75/hr).
 
 ## Working agreements
 
@@ -63,3 +114,13 @@ Never rent a GPU to tune reward weights.
 `uv` + `.venv` (Python 3.12). Inference via `prime inference chat` (already
 authenticated) — set `PRIME_DISABLE_VERSION_CHECK=1`. Soundfont at `assets/piano.sf2`,
 rendering via `fluidsynth`. `hanon/infer.py` is the single place that calls Prime.
+
+## Removed, but recoverable
+
+First-species counterpoint — a fully verifiable grader, validated to rank Fux's own
+dorian solution at the top with nothing able to outscore it — and the original custom
+DSL both lived in `attic/` until they were deleted. Everything is in git history at
+`7431b49`; `git show 7431b49:attic/counterpoint.py` and friends. Two pieces are worth
+resurrecting if the need comes up: a rule filter in front of the judge, so the judge
+never spends a call on malformed music, and `argmax_probe.py`, which searches a
+reward's maximiser offline and applies to any reward, including the current one.
