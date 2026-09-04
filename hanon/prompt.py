@@ -29,8 +29,9 @@ def pedal(time, down=True):
     piano.control_changes.append(pretty_midi.ControlChange(number=64, value=127 if down else 0, time=time))
 
 # --- your composition goes here ---
-# Build it with Python: a list of chords for the harmony, a function per phrase or
-# section, loops for repetition with variation. Track time in a variable `t`.
+# Plan sections first (e.g. A, B, A'), each 8+ bars. Write one function per section
+# that takes a start time and returns the end time, and build each from chord lists and
+# loops. Keep a running total `t`; the piece is finished only when t >= 30.
 
 pm.write("out.mid")
 ```
@@ -41,7 +42,11 @@ line per note, and do not just copy a pattern: the brief decides key, tempo, moo
 
 Rules:
 - Solo piano only: a single Instrument with program=0.
-- Write 30-90 seconds of music.
+- Length: at least 30 seconds, at most 90. At 96 bpm in 4/4 that is 12 to 36 bars, \
+and a 4-bar phrase is 10 seconds, so a piece needs at least three 8-bar sections. Check \
+your running total `t` before writing the file.
+- Form: at least three sections, with the later ones varying the earlier ones (new \
+register, new rhythm, thicker chords, a different ending) rather than repeating them.
 - Shape it: vary velocity, use the sustain pedal, and give the piece a structure rather \
 than a single texture repeated.
 - Output only a single ```python code block. No explanation, no commentary.
