@@ -54,6 +54,22 @@ and that is a trap: if every reference is Chopin the candidate loses every compa
 the reward is constant, and a constant has no gradient. Mix `love` (target) with `ok`
 (beatable), 70/30.
 
+So we do *not* share the blog's shortage, and the two tiers come from different places:
+
+- **`love` comes from human data, not from rating.** 30s excerpts from MAESTRO /
+  GiantMIDI / public-domain MIDI, pushed through the same bar-by-bar renderer. Better
+  than a hand-rated tier because it doesn't share the model's tics, so the judge can't
+  be fooled by "sounds like the other model samples." Two things must be handled or the
+  judge learns the wrong lesson: (1) *format is a tell* — performed MIDI has human
+  timing, velocity curves and pedal, model output is quantized code, so human excerpts
+  get quantized and velocity-flattened to look like something `pretty_midi` code could
+  have produced; (2) *excerpts need edges* — 30s from the middle of a sonata has no
+  beginning or cadence and loses to a model piece that has both, so cut at phrase
+  boundaries or use short complete pieces.
+- **`ok` comes from the model's own better samples**, hand-rated. This is what keeps a
+  gradient alive. ~100 rated samples covers it, and the same labels calibrate the
+  `metrics.py` thresholds, which human music can't do because it isn't degenerate.
+
 **GH200 96GB @ $1.99/hr, not H100 @ $3.29.** More memory than an H100 for well under the
 price — room for 8B + LoRA + vLLM + a colocated judge, which makes judge inference free.
 Check `prime availability list` before assuming; prices move and I quoted them wrong once.
@@ -82,7 +98,7 @@ Never rent a GPU to tune reward weights.
 | Anti-degeneracy metrics | `hanon/rewards/metrics.py` | done, **thresholds still guesses** |
 | Bar-by-bar renderer | `hanon/render.py` | done |
 | Pairwise judge | `hanon/rewards/judge.py` | done, discriminates correctly live |
-| Reference pool | `hanon/refs.py` | schema done, **pool empty** |
+| Reference pool | `hanon/refs.py` | schema done, **pool empty**; `love` from human MIDI, `ok` hand-rated |
 | End-to-end reward | `hanon/task.py` | done |
 | Sampling harness | `scripts/play.py` | done |
 | verifiers v1 taskset | — | next |
@@ -93,8 +109,9 @@ Never rent a GPU to tune reward weights.
 
 1. **Sample a few hundred pieces** with `scripts/play.py` on qwen3-8b ($0.117/$0.455 per
    1M via Prime Inference — a few dollars).
-2. **Rate ~200 of them** into `love` / `ok` / `meh`. About an hour of listening. This is
-   the real bottleneck and nothing downstream works without it.
+2. **Build the reference pool.** Two halves: (a) a script that excerpts, quantizes and
+   velocity-flattens human MIDI into `love`; (b) rate ~100 model samples into `ok` /
+   `meh`, about half an hour of listening. Nothing downstream works without this.
 3. **Calibrate the metric thresholds** against the rated pool instead of my guesses.
 4. **Headroom probe**: is best-of-8 meaningfully better than mean-of-8? That gap is what
    RL climbs. No gap means no amount of GPU time helps.
