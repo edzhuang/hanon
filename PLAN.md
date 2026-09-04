@@ -1,94 +1,87 @@
-# hanon — RL a small LLM to write counterpoint by writing code
+# hanon — RL a small LLM to compose piano music by writing code
 
-Inspired by surya.website/rling-qwen-to-paint-with-code, which RL'd a model to paint
-via p5.brush sketches. Same skeleton — **prompt → model writes code → sandbox renders
-artifact → score → GRPO** — but with the reward deliberately swapped from aesthetic
-judgement to mechanical verification.
+Following surya.website/rling-qwen-to-paint-with-code, which RL'd Qwen to paint via
+p5.brush sketches. Same loop: **prompt → model writes code → sandbox renders artifact
+→ judge scores → GRPO.**
 
-## Why counterpoint instead of "compose something beautiful"
-
-The blog's hard part was the reward: subjective, judge-based, and it took them a
-rebuild to get right. With a judge-based reward, a flatlined run has three suspects —
-broken reward, miscalibrated reference pool, or a model too weak — and no ground truth
-to tell them apart. Each hypothesis costs another GPU-day to test.
-
-First-species counterpoint has strict, mechanical, centuries-old rules. So the grader
-is ordinary code that can be **unit-tested against textbook examples**, and when a run
-flatlines the reward is not one of the suspects. It is also still real music, which a
-math or code benchmark would not be.
-
-## The acceptance criterion: nothing may outscore Fux
-
-A verifiable reward moves the risk from "is the reward broken?" to "is the reward
-*complete*?" — and RL converges on the argmax, so the argmax is what to inspect. That
-search is free and offline, and it caught two exploits a training curve never would:
-
-| grader version | argmax | vs Fux | what it exploited |
-| --- | --- | --- | --- |
-| initial | 1.000 | beat 0.923 | leaping, wandering, a twelfth above the cantus |
-| + spacing, contrary motion, leap rules | 1.000 | beat 0.980 | 4 pitches, oscillating on one note |
-| + variety, overuse, fixed step ratio | 1.000 | **ties 1.000** | nothing; shape matches Fux |
-
-So the grader has a falsifiable spec, and `scripts/argmax_probe.py` is the test for it.
-Fux now scores a clean 1.000; broken lines score 0.01–0.40; and all eight cantus firmi
-admit solutions (21–272 perfect lines each), so the reward is neither unsatisfiable nor
-trivial.
-
-That the argmax *ties* rather than loses is the expected ceiling: rules eliminate
-wrongness, they do not produce rightness. Choosing among legal solutions is what the
-stage-3 judge is for — and by then it never has to look at garbage.
-
-## Shape
-
-| Piece | File | Status |
-| --- | --- | --- |
-| Cantus firmus bank (8 modal CFs) | `hanon/cantus.py` | done |
-| Sketch executor (subprocess, timeout, MIDI validation) | `hanon/executor.py` | done |
-| First-species grader (15 rules, graded severities) | `hanon/rewards/counterpoint.py` | done |
-| Prompt + end-to-end reward | `hanon/task.py` | done |
-| Anti-degeneracy metrics (now observability, not reward) | `hanon/rewards/metrics.py` | done |
-| verifiers v1 taskset | `hanon/taskset.py` | next |
-| Baseline eval + headroom probe | `scripts/` | needs an API key |
-| GRPO run (Qwen3-8B + LoRA, prime-rl) | — | after the probe |
+| Paint-with-code | hanon |
+| --- | --- |
+| p5.brush JS sketch | Python using `pretty_midi` |
+| Puppeteer → PNG | exec in sandbox → `.mid` (→ wav via fluidsynth) |
+| HPSv3 aesthetic score | local anti-degeneracy metrics |
+| pairwise judge vs. rated reference paintings | pairwise judge vs. rated reference pieces |
+| GEPA on the system prompt | same |
+| GRPO on a 35B model | GRPO on Qwen3-8B + LoRA, prime-rl |
 
 ## Reward
 
-Collapsed from the start, learning from their nine-component rubric that plateaued
-because the judges correlated 0.85–0.95:
+Their *post-mortem* shape, not the one they started with. The first attempt had nine
+components and plateaued at 0.65 with repetitive output, because four quality judges
+correlated 0.85–0.95 — one component wearing four hats — while length saturated
+immediately. Starting where they finished:
 
 ```
-reward = 0.10 * compiles + 0.90 * counterpoint_score   (× cantus-firmus-preserved gate)
-counterpoint_score = exp(-Σ violation_weights / 2.5)
+0.05  compiles                (binary gate)
+0.05  length in range         (binary gate)
+0.30  not degenerate          (local, free, absolute)
+0.60  pairwise vs references  (the only component that scales with taste)
 ```
 
-Severities are graded, not binary: a parallel fifth and a repeated note are both
-"wrong", but scoring them equally throws away most of the gradient. The cantus firmus
-check is a **gate**, not a deduction — a model that rewrites the cantus to fit its own
-line has not written counterpoint.
+Everything in `metrics.py` is logged and rewards nothing.
 
-Everything in `metrics.py` is logged and rewards nothing. Observability is free;
-reward components are not.
+## Two departures from the blog
 
-## Model and budget
+**The judge reads the score, not the audio.** Solo piano through one fixed soundfont
+means timbre is constant and all the variance is in the notes, so a bar-by-bar text
+rendering is nearly lossless. A 30s piece is ~220 tokens, so a comparison is ~1.8k —
+about **$0.002 per judgment on Haiku**, or ~$8 per training run. Audio judging stays
+for spot-checks, not the inner loop.
 
-**Qwen3-8B + LoRA on 1×H100** (~$1.75/hr on the Prime Intellect marketplace). Not 4B:
-RL sharpens what a model can already sometimes do rather than installing knowledge, and
-4B is where music-theory knowledge falls off. 4B and 8B cost the same per hour anyway —
-the cliff is at 32B, where you start needing multiple GPUs.
+**The reference pool is graded on purpose.** They *couldn't* source human p5.brush
+paintings. Piano is the opposite — MAESTRO and GiantMIDI are world-class and enormous —
+and that is a trap: if every reference is Chopin, the candidate loses every comparison,
+the reward is constant, and a constant has no gradient. The pool mixes `love` (the
+target) with `ok` (beatable), sampled 70/30.
 
-Cap: **$150**, of which ~$60 reaches a first real result and the rest is reserve for the
-runs that don't work. Discipline that keeps it there:
+## Status
 
-- **Debug the reward offline.** Cache a few hundred rollouts once, re-score them for
-  free. Never rent a GPU to iterate on reward weights.
-- **Spend $2 before $60.** Check best-of-8 vs mean-of-8 on the base model first. No gap
-  means no headroom, and no amount of GPU time fixes that.
-- **Smoke-test at 20 steps** (~$1) before committing to a 12-hour run.
-- **Terminate the instance.** A forgotten H100 over a weekend costs more than a
-  successful run.
+| Piece | File | State |
+| --- | --- | --- |
+| System prompt + briefs | `hanon/prompt.py` | done |
+| Sketch executor | `hanon/executor.py` | done |
+| Anti-degeneracy metrics | `hanon/rewards/metrics.py` | done, **thresholds still guesses** |
+| Bar-by-bar renderer | `hanon/render.py` | done |
+| Pairwise judge | `hanon/rewards/judge.py` | done, discriminates correctly live |
+| Reference pool | `hanon/refs.py` | schema done, **pool empty** |
+| End-to-end reward | `hanon/task.py` | done |
+| Sampling harness | `scripts/play.py` | done |
+| verifiers v1 taskset | — | next |
+| GEPA prompt optimisation | — | after baseline |
+| GRPO run | — | after headroom probe |
 
-## Later
+## Next, in order
 
-Aesthetic judgement is stage 3, layered on a model that already writes correct music —
-a better curriculum than starting with taste. Second through fifth species, then free
-counterpoint, are the natural difficulty ladder before that.
+1. **Sample a few hundred pieces** with `scripts/play.py` on qwen3-8b ($0.117/$0.455 per
+   1M via Prime Inference — a few dollars).
+2. **Rate ~200 of them** into `love` / `ok` / `meh`. About an hour of listening. This is
+   the real bottleneck and nothing downstream works without it.
+3. **Calibrate the metric thresholds** against the rated pool instead of my guesses.
+4. **Headroom probe**: is best-of-8 meaningfully better than mean-of-8? That gap is what
+   RL climbs. No gap means no amount of GPU time helps.
+5. **GEPA** on the system prompt — where the blog got its cheapest wins.
+6. **GRPO**, Qwen3-8B + LoRA, 1×H100 (~$1.75/hr).
+
+## Budget
+
+**$150 cap**, ~$60 to a first result. Judge inference is ~$8/run, not a barrier.
+Discipline that keeps it there: debug reward offline against cached rollouts, spend $2
+on the headroom probe before $60 on a run, smoke-test at 20 steps, and terminate the
+instance — a forgotten H100 over a weekend costs more than a successful run.
+
+## attic/
+
+First-species counterpoint: a fully verifiable grader, validated to rank Fux's own
+dorian solution at the top with nothing able to outscore it. Retired when the judge
+turned out to be affordable. Worth keeping — a rule filter in front of the judge would
+mean the judge never spends a call on malformed music, and `argmax_probe.py` (search
+the reward's maximiser offline and look at it) applies to any reward, including this one.
