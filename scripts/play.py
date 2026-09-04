@@ -44,7 +44,7 @@ def main():
     ap.add_argument("-n", type=int, default=4)
     ap.add_argument("-m", "--model", default="qwen/qwen3-8b")
     ap.add_argument("-t", "--temperature", type=float, default=0.9)
-    ap.add_argument("--max-tokens", type=int, default=4096)
+    ap.add_argument("--max-tokens", type=int, default=12000)
     a = ap.parse_args()
 
     OUT.mkdir(exist_ok=True)

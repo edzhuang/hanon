@@ -50,8 +50,6 @@ register, new rhythm, thicker chords, a different ending) rather than repeating 
 - Shape it: vary velocity, use the sustain pedal, and give the piece a structure rather \
 than a single texture repeated.
 - Output only a single ```python code block. No explanation, no commentary.
-
-/no_think
 """
 
 PROMPTS = [

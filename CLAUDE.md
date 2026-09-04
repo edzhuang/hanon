@@ -29,7 +29,16 @@ use the pedal without showing the signature. So the system prompt now carries th
 calls the task needs, with exact signatures, and says nothing else exists. Same shape as
 the blog's fix, scaled to the actual gap; the library still does the work and ordinary
 Python still supplies the structure. Do not document more of the library than this —
-that is how tokens end up on time signatures instead of music. The retired DSL is in git
+that is how tokens end up on time signatures instead of music.
+
+**Thinking mode on, always.** qwen3-8b with `/no_think` collapses to a handful of outputs
+per brief: 39 unique pieces in a 252-piece run, and 5 identical outputs from 5 calls at
+temperature 1.2. Not caching (response ids differ, a nonce in the prompt doesn't help);
+the non-thinking distribution is just a point mass on this task. With thinking on, 5
+calls gave 5 unique pieces at ~10k tokens each. A collapsed policy gives GRPO zero
+advantage and zero gradient, so diversity is non-negotiable. The cost is ~10k-token
+rollouts, so `max_tokens` is 12000 and training steps are slower. The no-think runs are
+kept in `out/v3` and `out/v4` as the record. The retired DSL is in git
 history (`git show 7431b49:attic/dsl/__init__.py`).
 
 **Qwen3-8B, not 4B.** RL sharpens what a model can already sometimes do; it does not
