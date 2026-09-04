@@ -19,11 +19,18 @@ scores → GRPO.**
 Reopening these without new evidence wastes time — each was argued out and several
 reversed an earlier wrong call.
 
-**`pretty_midi`, not a custom DSL.** The blog's allowlist-of-eight-methods finding was
-about p5.brush being *niche*: the model had no pretraining knowledge, had to be told,
-and hallucinated. `pretty_midi` is already in pretraining, so it needs no docs in the
-system prompt — same endpoint, reached for free. The retired DSL is in git history
-(`git show 7431b49:attic/dsl/__init__.py`).
+**`pretty_midi` with a six-call allowlist, not a custom DSL.** The blog's
+allowlist-of-eight-methods finding was about p5.brush being *niche*: the model had no
+pretraining knowledge, had to be told, and hallucinated. `pretty_midi` is in
+pretraining, but only partly: the first sampling run (2026-09-04) showed qwen3-8b knows
+`Note` and `Instrument` cold and hallucinates everything rarer — 12 of the first 14
+sketches failed on invented `ControlChange` keyword names, because the prompt told it to
+use the pedal without showing the signature. So the system prompt now carries the six
+calls the task needs, with exact signatures, and says nothing else exists. Same shape as
+the blog's fix, scaled to the actual gap; the library still does the work and ordinary
+Python still supplies the structure. Do not document more of the library than this —
+that is how tokens end up on time signatures instead of music. The retired DSL is in git
+history (`git show 7431b49:attic/dsl/__init__.py`).
 
 **Qwen3-8B, not 4B.** RL sharpens what a model can already sometimes do; it does not
 install knowledge. Composition is knowledge-bound and 4B is where that falls off. 4B and
