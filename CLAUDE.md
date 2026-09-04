@@ -54,7 +54,7 @@ and that is a trap: if every reference is Chopin the candidate loses every compa
 the reward is constant, and a constant has no gradient. Mix `love` (target) with `ok`
 (beatable), 70/30.
 
-**GH200 96GB @ $1.99/hr, not H100 @ $4.29.** More memory than an H100 for under half the
+**GH200 96GB @ $1.99/hr, not H100 @ $3.29.** More memory than an H100 for well under the
 price — room for 8B + LoRA + vLLM + a colocated judge, which makes judge inference free.
 Check `prime availability list` before assuming; prices move and I quoted them wrong once.
 
@@ -99,7 +99,28 @@ Never rent a GPU to tune reward weights.
 4. **Headroom probe**: is best-of-8 meaningfully better than mean-of-8? That gap is what
    RL climbs. No gap means no amount of GPU time helps.
 5. **GEPA** on the system prompt — where the blog got its cheapest wins.
-6. **GRPO**, Qwen3-8B + LoRA, 1×H100 (~$1.75/hr).
+6. **GRPO**, Qwen3-8B + LoRA, 1×GH200 ($1.99/hr, verified 2026-09-04).
+
+## Budget
+
+Hard cap **$150**, prepaid into the Prime wallet in two tranches. Everything this
+project spends (pods, qwen3-8b sampling, the Haiku judge via Prime Inference) draws
+from that one wallet, so `prime wallet` is the single source of truth for spend.
+
+| Tranche | Covers | Amount |
+| --- | --- | --- |
+| Now | Steps 1–5: sampling, judge passes, calibration, headroom probe, GEPA. API only. | $25 |
+| After the headroom probe passes | Step 6: ~60 GH200-hours, enough for 4–6 GRPO runs including the ones that break. | $125 |
+
+Rules:
+
+- The second tranche is gated on the headroom probe, not on the balance. No gap
+  between best-of-8 and mean-of-8 means the project ends with $0 of GPU spend.
+- When the wallet is empty the project stops. Write up, don't top up.
+- Auto top-up stays off. Confirm in billing settings that a pod is terminated at zero
+  balance rather than the account going negative.
+- `prime pods list` at the end of every session. An idle pod costs the same as a
+  training one, and a forgotten weekend is $140.
 
 ## Working agreements
 
