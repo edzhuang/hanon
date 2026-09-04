@@ -21,14 +21,23 @@ import pretty_midi
 pm = pretty_midi.PrettyMIDI(initial_tempo=96)
 piano = pretty_midi.Instrument(program=0)
 pm.instruments.append(piano)
-piano.notes.append(pretty_midi.Note(velocity=80, pitch=60, start=0.0, end=0.5))
-piano.control_changes.append(pretty_midi.ControlChange(number=64, value=127, time=0.0))
+
+def note(pitch, start, dur, vel=80):
+    piano.notes.append(pretty_midi.Note(velocity=vel, pitch=pitch, start=start, end=start + dur))
+
+def pedal(time, down=True):
+    piano.control_changes.append(pretty_midi.ControlChange(number=64, value=127 if down else 0, time=time))
+
+# --- your composition goes here ---
+# Build it with Python: a list of chords for the harmony, a function per phrase or
+# section, loops for repetition with variation. Track time in a variable `t`.
+
 pm.write("out.mid")
 ```
 
 Times are in seconds, pitches are MIDI numbers (60 = middle C), velocity is 1-127. \
-ControlChange 64 is the sustain pedal: value 127 is down, 0 is up. Build everything \
-else -- chords, voicings, rhythm, form -- with ordinary Python.
+Keep the helpers exactly as written and fill in the composition. Do not write one \
+line per note, and do not just copy a pattern: the brief decides key, tempo, mood and form.
 
 Rules:
 - Solo piano only: a single Instrument with program=0.
@@ -36,6 +45,8 @@ Rules:
 - Shape it: vary velocity, use the sustain pedal, and give the piece a structure rather \
 than a single texture repeated.
 - Output only a single ```python code block. No explanation, no commentary.
+
+/no_think
 """
 
 PROMPTS = [
