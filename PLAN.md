@@ -17,10 +17,26 @@ is ordinary code that can be **unit-tested against textbook examples**, and when
 flatlines the reward is not one of the suspects. It is also still real music, which a
 math or code benchmark would not be.
 
-Validation that matters: the grader scores **Fux's own dorian solution at 0.92**, and
-deliberately broken lines at 0.02–0.45. It earned that number — the first version
-flagged Fux for a second climax on his final note, which was the grader being wrong,
-not Fux.
+## The acceptance criterion: nothing may outscore Fux
+
+A verifiable reward moves the risk from "is the reward broken?" to "is the reward
+*complete*?" — and RL converges on the argmax, so the argmax is what to inspect. That
+search is free and offline, and it caught two exploits a training curve never would:
+
+| grader version | argmax | vs Fux | what it exploited |
+| --- | --- | --- | --- |
+| initial | 1.000 | beat 0.923 | leaping, wandering, a twelfth above the cantus |
+| + spacing, contrary motion, leap rules | 1.000 | beat 0.980 | 4 pitches, oscillating on one note |
+| + variety, overuse, fixed step ratio | 1.000 | **ties 1.000** | nothing; shape matches Fux |
+
+So the grader has a falsifiable spec, and `scripts/argmax_probe.py` is the test for it.
+Fux now scores a clean 1.000; broken lines score 0.01–0.40; and all eight cantus firmi
+admit solutions (21–272 perfect lines each), so the reward is neither unsatisfiable nor
+trivial.
+
+That the argmax *ties* rather than loses is the expected ceiling: rules eliminate
+wrongness, they do not produce rightness. Choosing among legal solutions is what the
+stage-3 judge is for — and by then it never has to look at garbage.
 
 ## Shape
 

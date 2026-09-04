@@ -41,8 +41,21 @@ WEIGHTS = {
     "no_single_climax": 0.25,
     "too_few_steps": 0.25,
     "parallel_imperfect_run": 0.2,
-    "repeated_note": 0.1,   # Fux himself repeats notes; discouraged, not an error
+    "repeated_note": 0.3,          # only charged beyond the second; Fux uses two
+    "voice_spacing": 0.3,          # voices drifting past a tenth
+    "similar_motion_excess": 0.5,  # Fux: prefer contrary motion
+    "consecutive_leaps": 0.4,
+    "long_monotonic_run": 0.3,
+    "pitch_overuse": 0.4,      # dwelling on one note instead of shaping a line
+    "low_variety": 0.5,
 }
+
+REPEATS_ALLOWED = 2   # Fux's dorian solution repeats twice; that is idiomatic, not error
+STEP_TARGET = 0.75    # Fux sits at 0.90; below this the line stops being a melody
+MAX_SPACING = 16      # a tenth
+MIN_CONTRARY = 0.4    # fraction of motions that must be contrary or oblique
+MAX_SAME_PITCH = 3    # Fux's most-used note appears three times
+MIN_VARIETY = 0.5     # distinct pitches as a fraction of length; Fux is 0.55
 
 DECAY = 2.5  # score = exp(-penalty / DECAY); tuned so ~3 real errors lands near 0.3
 
@@ -52,10 +65,11 @@ class Violation:
     rule: str
     index: int
     detail: str
+    scale: float = 1.0  # lets a rule charge proportionally to how badly it is missed
 
     @property
     def weight(self) -> float:
-        return WEIGHTS.get(self.rule, 0.5)
+        return WEIGHTS.get(self.rule, 0.5) * self.scale
 
     def __str__(self) -> str:
         return f"{self.rule}@{self.index}: {self.detail}"
@@ -88,6 +102,7 @@ def check(cf: list[int], cp: list[int], speller, cp_above: bool = True) -> list[
 
     upper, lower = (cp, cf) if cp_above else (cf, cp)
     quals = [speller.interval(l, u) for u, l in zip(upper, lower)]
+    dists = [abs(u - l) for u, l in zip(upper, lower)]
     simple = [(_reduce(g), q) for g, q in quals]
 
     # --- vertical intervals ---
@@ -123,12 +138,29 @@ def check(cf: list[int], cp: list[int], speller, cp_above: bool = True) -> list[
             run = 0
 
     # --- melodic shape of the counterpoint ---
-    steps = 0
+    steps = repeats = 0
+    prev_leap = 0
+    run_len, run_dir = 1, 0
     for i in range(n - 1):
         d = cp[i + 1] - cp[i]
         a = abs(d)
+
+        if _sign(d) == run_dir and d:
+            run_len += 1
+            if run_len == 5:
+                v.append(Violation("long_monotonic_run", i, "5+ notes moving one way"))
+        else:
+            run_len, run_dir = 1, _sign(d)
+
+        if a >= 3:
+            if prev_leap and _sign(d) == _sign(prev_leap):
+                v.append(Violation("consecutive_leaps", i, "two leaps in the same direction"))
+            prev_leap = d
+        else:
+            prev_leap = 0
+
         if a == 0:
-            v.append(Violation("repeated_note", i, "note repeated"))
+            repeats += 1
             continue
         g, q = speller.interval(cp[i], cp[i + 1])
         if a <= 2:
@@ -140,8 +172,43 @@ def check(cf: list[int], cp: list[int], speller, cp_above: bool = True) -> list[
             if _sign(nxt) == _sign(d) or abs(nxt) > 2:
                 v.append(Violation("unrecovered_leap", i, f"leap of {a} not answered by step"))
 
-    if n > 1 and steps / (n - 1) < 0.5:
-        v.append(Violation("too_few_steps", 0, f"only {steps}/{n-1} stepwise"))
+    if repeats > REPEATS_ALLOWED:
+        v.append(Violation("repeated_note", 0, f"{repeats} repeated notes",
+                           scale=repeats - REPEATS_ALLOWED))
+
+    moves = (n - 1) - repeats
+    ratio = steps / moves if moves > 0 else 0.0
+    if ratio < STEP_TARGET:
+        # Charged in proportion to the shortfall, so the gradient points at melody.
+        v.append(Violation("too_few_steps", 0, f"{steps}/{moves} moving notes stepwise ({ratio:.0%})",
+                           scale=(STEP_TARGET - ratio) / STEP_TARGET * 3))
+
+    # A line that keeps returning to the same pitch is noodling, not shaping a melody.
+    for pitch in set(cp):
+        extra = cp.count(pitch) - MAX_SAME_PITCH
+        if extra > 0:
+            v.append(Violation("pitch_overuse", cp.index(pitch),
+                               f"{speller.name(pitch)} used {cp.count(pitch)}x", scale=extra))
+    variety = len(set(cp)) / n
+    if variety < MIN_VARIETY:
+        v.append(Violation("low_variety", 0, f"{len(set(cp))} distinct pitches in {n} notes",
+                           scale=(MIN_VARIETY - variety) / MIN_VARIETY * 2))
+
+    # Voices that drift beyond a tenth stop sounding like two parts of one texture.
+    for i, dist in enumerate(dists):
+        if dist > MAX_SPACING:
+            v.append(Violation("voice_spacing", i, f"{dist} semitones apart",
+                               scale=min(3.0, (dist - MAX_SPACING) / 4)))
+
+    if n > 2:
+        contrary = sum(
+            1 for i in range(n - 1)
+            if _sign(upper[i + 1] - upper[i]) != _sign(lower[i + 1] - lower[i])
+        )
+        frac = contrary / (n - 1)
+        if frac < MIN_CONTRARY:
+            v.append(Violation("similar_motion_excess", 0, f"only {frac:.0%} contrary/oblique",
+                               scale=(MIN_CONTRARY - frac) / MIN_CONTRARY * 2))
 
     span = max(cp) - min(cp)
     if span > 16:
