@@ -14,10 +14,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Simple (octave-reduced) intervals in semitones.
-PERFECT = {0, 7}                      # unison/octave, fifth
-CONSONANT = {0, 3, 4, 7, 8, 9}        # + m3 M3 m6 M6; P4 counts as dissonant above a bass
-MELODIC_OK = {1, 2, 3, 4, 5, 7, 8, 9, 12}  # steps, consonant leaps, octave
+# Intervals are classified by (generic, quality), not semitones -- see spelling.py for
+# why. Generic is octave-reduced here, so a twelfth classifies as a fifth.
+CONSONANT = {(1, "P"), (5, "P"), (3, "m"), (3, "M"), (6, "m"), (6, "M")}
+PERFECT = {(1, "P"), (5, "P")}
+
+# Fux's melodic allowlist: steps, consonant leaps, the ascending minor sixth, the
+# octave. Every augmented or diminished interval is excluded by construction, which is
+# the whole point of grading on quality.
+MELODIC_OK = {(2, "m"), (2, "M"), (3, "m"), (3, "M"), (4, "P"), (5, "P"), (6, "m"), (8, "P")}
 
 # How much each violation costs. These are severities, not probabilities: a dissonance
 # on a strong beat is a category error, a repeated note is a stylistic wrinkle.
@@ -60,11 +65,17 @@ def _sign(x: int) -> int:
     return (x > 0) - (x < 0)
 
 
-def check(cf: list[int], cp: list[int], cp_above: bool = True) -> list[Violation]:
+def _reduce(generic: int) -> int:
+    """Octave-reduce a generic interval: a twelfth becomes a fifth, an octave a unison."""
+    return (generic - 1) % 7 + 1
+
+
+def check(cf: list[int], cp: list[int], speller, cp_above: bool = True) -> list[Violation]:
     """Return every rule violation in a first-species counterpoint line.
 
     `cf` is the given cantus firmus, `cp` the counterpoint, both as MIDI numbers,
-    aligned note-against-note.
+    aligned note-against-note. `speller` supplies note names for the mode, without
+    which augmented seconds are indistinguishable from minor thirds.
     """
     v: list[Violation] = []
     if len(cp) != len(cf):
@@ -76,15 +87,15 @@ def check(cf: list[int], cp: list[int], cp_above: bool = True) -> list[Violation
     n = len(cf)
 
     upper, lower = (cp, cf) if cp_above else (cf, cp)
-    verts = [abs(u - l) for u, l in zip(upper, lower)]
-    simple = [x % 12 for x in verts]
+    quals = [speller.interval(l, u) for u, l in zip(upper, lower)]
+    simple = [(_reduce(g), q) for g, q in quals]
 
     # --- vertical intervals ---
-    for i, (s, raw) in enumerate(zip(simple, verts)):
-        # A fourth above the bass is dissonant in two-voice writing; a twelfth is not.
-        dissonant = s not in CONSONANT or (s == 5)
-        if dissonant:
-            v.append(Violation("dissonant_vertical", i, f"{raw} semitones"))
+    for i, ((g, q), (rg, rq)) in enumerate(zip(quals, simple)):
+        # A fourth above the bass is dissonant in two-voice writing; so is every
+        # augmented and diminished interval, which semitone counting would miss.
+        if (rg, rq) not in CONSONANT:
+            v.append(Violation("dissonant_vertical", i, f"{q}{g}"))
 
     for i in range(n):
         if cp_above and cp[i] < cf[i]:
@@ -99,12 +110,12 @@ def check(cf: list[int], cp: list[int], cp_above: bool = True) -> list[Violation
         a, b = simple[i], simple[i + 1]
 
         if b in PERFECT and a == b and (du or dl):
-            v.append(Violation("parallel_perfect", i, f"consecutive {'unison/octave' if b == 0 else 'fifth'}"))
+            v.append(Violation("parallel_perfect", i, f"consecutive {'unison/octave' if b[0] == 1 else 'fifth'}"))
         elif b in PERFECT and _sign(du) == _sign(dl) and _sign(du) != 0 and abs(du) > 2:
             # Similar motion into a perfect consonance with a leap in the upper voice.
             v.append(Violation("direct_perfect", i, "similar motion into a perfect consonance"))
 
-        if a in (3, 4, 8, 9) and b in (3, 4, 8, 9):
+        if a[0] in (3, 6) and b[0] in (3, 6):
             run += 1
             if run == 4:
                 v.append(Violation("parallel_imperfect_run", i, "5+ parallel thirds/sixths"))
@@ -119,10 +130,11 @@ def check(cf: list[int], cp: list[int], cp_above: bool = True) -> list[Violation
         if a == 0:
             v.append(Violation("repeated_note", i, "note repeated"))
             continue
+        g, q = speller.interval(cp[i], cp[i + 1])
         if a <= 2:
             steps += 1
-        if a not in MELODIC_OK:
-            v.append(Violation("melodic_forbidden", i, f"melodic interval of {a} semitones"))
+        if (g, q) not in MELODIC_OK:
+            v.append(Violation("melodic_forbidden", i, f"melodic {q}{g} ({speller.name(cp[i])}->{speller.name(cp[i+1])})"))
         if a >= 5 and i + 2 < n:
             nxt = cp[i + 2] - cp[i + 1]
             if _sign(nxt) == _sign(d) or abs(nxt) > 2:
@@ -144,23 +156,23 @@ def check(cf: list[int], cp: list[int], cp_above: bool = True) -> list[Violation
 
     # --- opening and cadence ---
     if simple[0] not in PERFECT:
-        v.append(Violation("bad_opening", 0, f"opens on {verts[0]} semitones, not a perfect consonance"))
-    if simple[-1] != 0:
-        v.append(Violation("bad_final", n - 1, f"ends on {verts[-1]} semitones, not unison/octave"))
+        v.append(Violation("bad_opening", 0, f"opens on {quals[0][1]}{quals[0][0]}, not a perfect consonance"))
+    if simple[-1] != (1, "P"):
+        v.append(Violation("bad_final", n - 1, f"ends on {quals[-1][1]}{quals[-1][0]}, not unison/octave"))
     elif n >= 2:
         # The classic close: major sixth expanding to the octave by contrary step.
         du, dl = upper[-1] - upper[-2], lower[-1] - lower[-2]
-        if simple[-2] not in (9, 3) or _sign(du) == _sign(dl) or abs(du) > 2 or abs(dl) > 2:
+        if simple[-2][0] not in (6, 3) or _sign(du) == _sign(dl) or abs(du) > 2 or abs(dl) > 2:
             v.append(Violation("cadence", n - 2, "penultimate is not a stepwise contrary approach from a sixth/third"))
 
     return v
 
 
-def score(cf: list[int], cp: list[int], cp_above: bool = True) -> tuple[float, list[Violation]]:
+def score(cf: list[int], cp: list[int], speller, cp_above: bool = True) -> tuple[float, list[Violation]]:
     """Grade a counterpoint in [0, 1]. Smooth decay, so partial credit is real."""
     import math
 
-    vs = check(cf, cp, cp_above)
+    vs = check(cf, cp, speller, cp_above)
     penalty = sum(x.weight for x in vs)
     return math.exp(-penalty / DECAY), vs
 

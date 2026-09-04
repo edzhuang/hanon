@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from hanon.cantus import Cantus
 from hanon.executor import run_sketch
 from hanon.rewards.counterpoint import extract_voices, score
+from hanon.rewards.spelling import Speller
 
 PROMPT = """\
 Write first-species counterpoint above this cantus firmus, in {mode} mode.
@@ -65,6 +66,6 @@ def evaluate(text: str, c: Cantus, timeout: float = 30.0) -> Result:
         return Result(reward=0.10, compiled=True, cf_preserved=False,
                       error=f"expected cantus {list(c.pitches)}, found {lower}")
 
-    s, vs = score(list(c.pitches), upper)
+    s, vs = score(list(c.pitches), upper, Speller(c.mode, c.final))
     return Result(reward=0.10 + 0.90 * s, compiled=True, cf_preserved=True,
                   cp_score=s, violations=vs)
