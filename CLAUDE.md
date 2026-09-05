@@ -105,18 +105,53 @@ Find the equivalent positive control for any new reward component.
 **Iterate on reward offline against cached rollouts.** Generate once, re-score for free.
 Never rent a GPU to tune reward weights.
 
+## Headroom probe result (2026-09-05)
+
+64 pieces (8 per brief, thinking-mode qwen3-8b), judged both ways against 2 human
+`love` refs and 3 other model pieces. $1.65. There is a slope:
+
+| Signal | Value | Reading |
+| --- | --- | --- |
+| model vs human, mean win | 0.20 | humans win 80%, not 100%: the 0.60 component is not constant |
+| model vs model, std of win rate | 0.32 | wider than the noise floor; the judge orders the pieces |
+| corr(vs human, vs model) | +0.47 | two independent comparison sets agree on which pieces are better |
+| corr(judge, bar-level loopiness) | −0.33 | the judge dislikes loops, which is what the ear disliked |
+| corr(judge, `metrics.py` degeneracy) | +0.07 | the local metric measures nothing the judge cares about |
+| judge disagrees with itself across orders | 24% | the per-comparison noise floor; ask both orders, always |
+
+Caveats: best-of-8 minus mean-of-8 came out +0.47 but is inflated by max-of-noisy-values;
+the correlations are the honest evidence. The ceiling is low: every piece in the pool
+loops and the user rated all 216 `meh`. RL can climb from "loops 90%" toward "loops
+less"; it cannot reach "good" from this base model.
+
+**Judge findings that changed the design.** Probe v1 (1,080 verdicts, $2.50) measured
+the judge rather than the model: Haiku picks whichever piece is shown *second* 68% of
+the time, and asked "which is better *for this brief*" it preferred model loops to
+Bach 62% of the time, because human refs are not brief-matched and a chorale is a poor
+music-box lullaby. The judge now scores musical quality only, asks both orders (1 /
+0.5 / 0), and gets 120 tokens so "I need to evaluate…" openers don't truncate to
+nothing. Sanity: the loopiest piece loses to every human ref both ways; Bach vs Chopin
+splits; the least-loopy model piece beats the loopiest both ways.
+
+**The `structure` gate rewards loops.** It bands pitch-class-histogram self-similarity
+to 0.45–0.85 and a two-bar loop with a drifting melody note lands inside the band. Its
+correlation with bar-level repetition is 0.01; `not_stuck` returned one value for all
+216 pieces. Replace with a transposition-aware bar-repetition metric, calibrated on the
+two classes we have: human refs vs the v5 pool.
+
 ## Status
 
 | Piece | File | State |
 | --- | --- | --- |
 | System prompt + briefs | `hanon/prompt.py` | done |
 | Sketch executor | `hanon/executor.py` | done |
-| Anti-degeneracy metrics | `hanon/rewards/metrics.py` | done, **thresholds still guesses** |
+| Anti-degeneracy metrics | `hanon/rewards/metrics.py` | done, **`structure` gate rewards loops, needs replacing** |
 | Bar-by-bar renderer | `hanon/render.py` | done |
-| Pairwise judge | `hanon/rewards/judge.py` | done, discriminates correctly live |
-| Reference pool | `hanon/refs.py` | schema done, **pool empty**; `love` from human MIDI, `ok` hand-rated |
+| Pairwise judge | `hanon/rewards/judge.py` | done; quality-only, both orders, validated on known pairs |
+| Reference pool | `hanon/refs.py` | 12 human `love` refs from music21 corpus (`scripts/human_refs.py`); `ok` = model's own samples |
 | End-to-end reward | `hanon/task.py` | done |
-| Sampling harness | `scripts/play.py` | done |
+| Sampling harness | `scripts/play.py`, `scripts/sample_all.sh` | done; v5 pool in `out/` (216 compiled, 212 unique) |
+| Headroom probe | `scripts/headroom.py` | done, see result above |
 | verifiers v1 taskset | — | next |
 | GEPA prompt optimisation | — | after baseline |
 | GRPO run | — | after headroom probe |
