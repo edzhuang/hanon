@@ -18,7 +18,7 @@ from hanon.refs import load
 from hanon.render import describe
 from hanon.rewards.judge import compare
 
-CACHE = Path("out/headroom.json")
+CACHE = Path("out/headroom_v2.json")
 
 
 def pieces():
@@ -38,6 +38,10 @@ def pieces():
 def main(a):
     rng = random.Random(0)
     rows = pieces()
+    if a.per_brief:
+        by = {}
+        for r in rows: by.setdefault(r["brief"], []).append(r)
+        rows = [r for rs in by.values() for r in random.Random(0).sample(rs, min(a.per_brief, len(rs)))]
     human = [r for r in load() if r.source == "human" and r.tier == "love"]
     print(f"{len(rows)} pieces, {len(human)} human refs")
     text = {r["id"]: describe(r["mid"]) for r in rows}
@@ -56,7 +60,7 @@ def main(a):
 
     def run(j):
         key, brief, c, ref = j
-        return key, compare(brief, c, ref, rng=random.Random(key))
+        return key, compare(brief, c, ref)   # both orders inside; 1 / 0.5 / 0 / None
     with ThreadPoolExecutor(a.workers) as ex:
         for i, (key, v) in enumerate(ex.map(run, todo), 1):
             cache[key] = v
@@ -77,6 +81,7 @@ def main(a):
     print(f"vs human: mean win {st.mean(vh):.3f}   pieces with any win: {sum(x > 0 for x in vh)}/{len(vh)}")
     print(f"vs model: mean win {st.mean(vm):.3f} (0.5 = no ordering)   std {st.pstdev(vm):.3f}   "
           f"win-rate histogram: " + " ".join(f"{x:.2f}:{sum(abs(y - x) < 0.01 for y in vm)}" for x in sorted(set(round(y, 2) for y in vm))))
+    split = sum(1 for v in cache.values() if v == 0.5); print(f"order-split verdicts (judge disagreed with itself): {split}/{len(cache)}")
     # best-of-8 vs mean-of-8 on the model-vs-model win rate, per brief
     print("\nbest-of-8 vs mean-of-8 (model-vs-model win rate), per brief:")
     gaps = []
@@ -92,7 +97,7 @@ def main(a):
         ma, mb = st.mean(a), st.mean(b); d = math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b))
         return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / d if d else float("nan")
     loop = {r["id"]: r for r in json.loads(Path("out/loopiness.json").read_text())} if Path("out/loopiness.json").exists() else {}
-    ok = [r for r in rows if r["vs_model"] is not None and r["id"] in loop]
+    ok = [r for r in rows if r["vs_model"] is not None and r["vs_human"] is not None and r["id"] in loop]
     print(f"\ncorr(vs_model, degeneracy metric) = {corr([r['vs_model'] for r in ok], [r['degeneracy'] for r in ok]):+.2f}")
     print(f"corr(vs_model, loopiness)         = {corr([r['vs_model'] for r in ok], [loop[r['id']]['loopy'] for r in ok]):+.2f}")
     print(f"corr(vs_human, vs_model)          = {corr([r['vs_human'] for r in ok], [r['vs_model'] for r in ok]):+.2f}")
@@ -106,5 +111,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-human", type=int, default=2)
     ap.add_argument("--n-model", type=int, default=3)
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--per-brief", type=int, default=0, help="subsample this many pieces per brief (0 = all)")
     main(ap.parse_args())
