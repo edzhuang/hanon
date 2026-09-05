@@ -1,5 +1,14 @@
 # hanon
 
+> **Paused 2026-09-05.** The bar was "train an AI to play pretty good music", the way
+> the reference blog trained one to paint. The headroom probe showed a slope, but from
+> "always loops" toward "loops less", and none of 216 baseline pieces was decent. RL
+> sharpens what a model can already sometimes do; qwen3-8b never does this. Reaching
+> the bar would mean a larger policy (30B-A3B sampled diversely) and a few hundred
+> dollars with no guarantee, which is outside the $75 cap. Total spent: about $5.
+> Reopen only with new evidence, e.g. a base model that produces a non-looping piece
+> unprompted at least occasionally.
+
 RL a small LLM to compose piano music by writing `pretty_midi` code. Following
 surya.website/rling-qwen-to-paint-with-code, which RL'd Qwen to paint via p5.brush
 sketches. Same loop: **prompt → model writes code → sandbox renders artifact → judge
